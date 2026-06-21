@@ -4,6 +4,8 @@ export interface Note {
   title: string
   content: string
   cover_url: string | null
+  share_token?: string | null
+  is_shared?: boolean
   is_pinned: boolean
   is_favorite: boolean
   created_at: string

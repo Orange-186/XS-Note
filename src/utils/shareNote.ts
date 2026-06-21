@@ -1,6 +1,13 @@
+import { getContentSummary } from './formatDate'
+
 export interface SharePayload {
   title: string
   content: string
+}
+
+export interface ShareLinkPayload extends SharePayload {
+  url: string
+  coverUrl?: string | null
 }
 
 export function buildShareText({ title, content }: SharePayload): string {
@@ -9,65 +16,54 @@ export function buildShareText({ title, content }: SharePayload): string {
   return body ? `${heading}\n\n${body}` : heading
 }
 
+export { buildAppShareUrl, buildPublicShareUrl } from './publishSharePage'
+
+export function isWechatBrowser(): boolean {
+  return /MicroMessenger/i.test(navigator.userAgent)
+}
+
 export async function copyShareText(payload: SharePayload): Promise<void> {
   const text = buildShareText(payload)
+  await copyText(text)
+}
 
-  try {
-    if (navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(text)
-      return
-    }
-  } catch {
-    // iOS / 部分浏览器 clipboard API 可能失败，回退到 execCommand
+export async function copyShareLink(url: string): Promise<void> {
+  await copyText(url)
+}
+
+async function copyText(text: string): Promise<void> {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text)
+    return
   }
 
   const textarea = document.createElement('textarea')
   textarea.value = text
   textarea.setAttribute('readonly', '')
   textarea.style.position = 'fixed'
-  textarea.style.left = '0'
-  textarea.style.top = '0'
   textarea.style.opacity = '0'
-  textarea.style.pointerEvents = 'none'
   document.body.appendChild(textarea)
-  textarea.focus()
   textarea.select()
-  textarea.setSelectionRange(0, text.length)
-
-  const copied = document.execCommand('copy')
+  document.execCommand('copy')
   document.body.removeChild(textarea)
-
-  if (!copied) {
-    throw new Error('复制失败，请使用「复制」按钮或手动选择内容')
-  }
 }
 
-/** 微信无 Web 分享接口：移动端优先调系统分享（可选微信），否则复制并提示 */
-export async function shareViaWeChat(payload: SharePayload): Promise<'shared' | 'copied'> {
-  if (canNativeShare()) {
-    await nativeShare(payload)
-    return 'shared'
-  }
-
-  await copyShareText(payload)
-  return 'copied'
-}
-
-export function openWeiboShare(payload: SharePayload): void {
+export function openWeiboShare(payload: ShareLinkPayload): void {
   const text = buildShareText(payload)
   const shareUrl = new URL('https://service.weibo.com/share/share.php')
   shareUrl.searchParams.set('title', text)
-  shareUrl.searchParams.set('url', window.location.href)
+  shareUrl.searchParams.set('url', payload.url)
   window.open(shareUrl.toString(), '_blank', 'noopener,noreferrer')
 }
 
-export function openQQShare(payload: SharePayload): void {
+export function openQQShare(payload: ShareLinkPayload): void {
   const title = payload.title.trim() || '无标题'
-  const summary = payload.content.trim() || title
+  const summary = getContentSummary(payload.content, 120)
   const shareUrl = new URL('https://connect.qq.com/widget/shareqq/index.html')
-  shareUrl.searchParams.set('url', window.location.href)
+  shareUrl.searchParams.set('url', payload.url)
   shareUrl.searchParams.set('title', title)
   shareUrl.searchParams.set('summary', summary)
+  shareUrl.searchParams.set('pics', payload.coverUrl ?? '')
   window.open(shareUrl.toString(), '_blank', 'noopener,noreferrer')
 }
 
@@ -82,15 +78,15 @@ export function canNativeShare(): boolean {
   return typeof navigator.share === 'function'
 }
 
-export async function nativeShare(payload: SharePayload, file?: File): Promise<void> {
+export async function nativeShare(payload: ShareLinkPayload, file?: File): Promise<void> {
   if (!canNativeShare()) {
     throw new Error('当前设备不支持系统分享')
   }
 
   const shareData: ShareData = {
     title: payload.title.trim() || 'XS Note',
-    text: buildShareText(payload),
-    url: window.location.href,
+    text: getContentSummary(payload.content, 80),
+    url: payload.url,
   }
 
   if (file && navigator.canShare?.({ files: [file] })) {
@@ -108,4 +104,32 @@ export function canShareFiles(): boolean {
   } catch {
     return false
   }
+}
+
+export type WechatShareResult = 'native' | 'wechat-guide' | 'copied'
+
+export async function shareToWechatMoments(payload: ShareLinkPayload): Promise<WechatShareResult> {
+  const title = payload.title.trim() || 'XS Note 笔记'
+  const description = getContentSummary(payload.content, 80)
+
+  if (canNativeShare()) {
+    try {
+      await navigator.share({
+        title,
+        text: description,
+        url: payload.url,
+      })
+      return 'native'
+    } catch (err) {
+      if (err instanceof Error && err.name === 'AbortError') throw err
+    }
+  }
+
+  await copyShareLink(payload.url)
+
+  if (isWechatBrowser()) {
+    return 'wechat-guide'
+  }
+
+  return 'copied'
 }

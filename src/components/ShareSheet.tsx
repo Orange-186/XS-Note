@@ -1,22 +1,30 @@
 import { useState } from 'react'
+import { fetchNoteById } from '../hooks/useNotes'
 import { canvasToPngFile, captureNoteElement } from '../utils/exportNote'
+import { publishNoteShare } from '../utils/publishSharePage'
 import {
   buildShareText,
   canNativeShare,
   canShareFiles,
   copyShareText,
+  isWechatBrowser,
   nativeShare,
   openQQShare,
   openWeiboShare,
   openTwitterShare,
-  shareViaWeChat,
+  shareToWechatMoments,
+  type ShareLinkPayload,
   type SharePayload,
 } from '../utils/shareNote'
 
 interface ShareSheetProps {
   open: boolean
+  noteId?: string
+  userId?: string
   payload: SharePayload
+  coverUrl?: string | null
   exportElement: HTMLElement | null
+  onPrepareShare?: () => Promise<boolean>
   onClose: () => void
   onNotify: (message: string) => void
 }
@@ -30,7 +38,7 @@ const SHARE_OPTIONS: Array<{
   hidden?: () => boolean
 }> = [
   { id: 'native', label: '更多', color: 'var(--color-primary)', hidden: () => !canNativeShare() },
-  { id: 'wechat', label: '微信', color: '#07C160' },
+  { id: 'wechat', label: '朋友圈', color: '#07C160' },
   { id: 'weibo', label: '微博', color: '#E6162D' },
   { id: 'qq', label: 'QQ', color: '#12B7F5' },
   { id: 'twitter', label: 'X', color: '#14171A' },
@@ -88,8 +96,50 @@ function ShareIcon({ id }: { id: ShareAction }) {
   }
 }
 
-export function ShareSheet({ open, payload, exportElement, onClose, onNotify }: ShareSheetProps) {
+async function buildShareLinkPayload(
+  noteId: string | undefined,
+  userId: string | undefined,
+  payload: SharePayload,
+  coverUrl: string | null | undefined,
+  onPrepareShare?: () => Promise<boolean>,
+): Promise<ShareLinkPayload> {
+  if (!noteId || !userId) {
+    return {
+      ...payload,
+      url: window.location.href,
+      coverUrl,
+    }
+  }
+
+  if (onPrepareShare) {
+    const ok = await onPrepareShare()
+    if (!ok) throw new Error('请先保存笔记后再分享')
+  }
+
+  const note = await fetchNoteById(noteId)
+  if (!note) throw new Error('笔记不存在')
+
+  const url = await publishNoteShare(note, userId)
+  return {
+    ...payload,
+    url,
+    coverUrl: note.cover_url ?? coverUrl,
+  }
+}
+
+export function ShareSheet({
+  open,
+  noteId,
+  userId,
+  payload,
+  coverUrl,
+  exportElement,
+  onPrepareShare,
+  onClose,
+  onNotify,
+}: ShareSheetProps) {
   const [busy, setBusy] = useState<ShareAction | null>(null)
+  const [wechatGuideUrl, setWechatGuideUrl] = useState<string | null>(null)
 
   if (!open) return null
 
@@ -101,26 +151,41 @@ export function ShareSheet({ open, payload, exportElement, onClose, onNotify }: 
 
     try {
       switch (action) {
-        case 'native':
-          await nativeShare(payload)
+        case 'native': {
+          const linkPayload = await buildShareLinkPayload(noteId, userId, payload, coverUrl, onPrepareShare)
+          await nativeShare(linkPayload)
           onClose()
-          break
-        case 'wechat': {
-          const result = await shareViaWeChat(payload)
-          onClose()
-          if (result === 'copied') {
-            onNotify('内容已复制，请打开微信粘贴分享')
-          }
           break
         }
-        case 'weibo':
-          openWeiboShare(payload)
+        case 'wechat': {
+          const linkPayload = await buildShareLinkPayload(noteId, userId, payload, coverUrl, onPrepareShare)
+          const result = await shareToWechatMoments(linkPayload)
+          if (result === 'wechat-guide') {
+            setWechatGuideUrl(linkPayload.url)
+            onNotify('公开链接已复制，请按提示分享到朋友圈')
+            break
+          }
+          if (result === 'native') {
+            onNotify('已唤起系统分享')
+            onClose()
+            break
+          }
+          onNotify('公开分享链接已复制，打开微信朋友圈粘贴即可看到标题、摘要和封面')
           onClose()
           break
-        case 'qq':
-          openQQShare(payload)
+        }
+        case 'weibo': {
+          const linkPayload = await buildShareLinkPayload(noteId, userId, payload, coverUrl, onPrepareShare)
+          openWeiboShare(linkPayload)
           onClose()
           break
+        }
+        case 'qq': {
+          const linkPayload = await buildShareLinkPayload(noteId, userId, payload, coverUrl, onPrepareShare)
+          openQQShare(linkPayload)
+          onClose()
+          break
+        }
         case 'twitter':
           openTwitterShare(payload)
           onClose()
@@ -132,12 +197,13 @@ export function ShareSheet({ open, payload, exportElement, onClose, onNotify }: 
           break
         case 'image': {
           if (!exportElement) throw new Error('无法生成分享图片')
+          const linkPayload = await buildShareLinkPayload(noteId, userId, payload, coverUrl, onPrepareShare)
           const canvas = await captureNoteElement(exportElement)
           const filename = payload.title.trim() || 'note'
           const file = await canvasToPngFile(canvas, filename)
 
           if (canNativeShare() && canShareFiles()) {
-            await nativeShare(payload, file)
+            await nativeShare(linkPayload, file)
             onClose()
             break
           }
@@ -163,51 +229,76 @@ export function ShareSheet({ open, payload, exportElement, onClose, onNotify }: 
   const previewText = preview.length > 120 ? `${preview.slice(0, 120)}…` : preview
 
   return (
-    <div className="share-sheet-overlay" role="presentation" onClick={onClose}>
-      <div
-        className="share-sheet"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="share-sheet-title"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="share-sheet__handle" aria-hidden="true" />
-        <h2 id="share-sheet-title" className="share-sheet__title">
-          分享到
-        </h2>
-        <p className="share-sheet__preview">{previewText}</p>
+    <>
+      <div className="share-sheet-overlay" role="presentation" onClick={onClose}>
+        <div
+          className="share-sheet"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="share-sheet-title"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="share-sheet__handle" aria-hidden="true" />
+          <h2 id="share-sheet-title" className="share-sheet__title">
+            分享到
+          </h2>
+          <p className="share-sheet__preview">{previewText}</p>
+          {noteId && userId && (
+            <p className="share-sheet__hint">微信分享将发布公开链接，包含标题、摘要与封面图</p>
+          )}
 
-        <div className="share-sheet__grid">
-          {visibleOptions.map((option) => (
-            <button
-              key={option.id}
-              type="button"
-              className="share-sheet__item"
-              disabled={busy !== null}
-              onClick={() => handleShare(option.id)}
-            >
-              <span
-                className="share-sheet__icon"
-                style={{
-                  background: option.id === 'copy' || option.id === 'twitter'
-                    ? 'var(--color-primary-soft)'
-                    : option.color,
-                  color: option.id === 'copy' ? 'var(--color-text-secondary)' : '#fff',
-                }}
+          <div className="share-sheet__grid">
+            {visibleOptions.map((option) => (
+              <button
+                key={option.id}
+                type="button"
+                className="share-sheet__item"
+                disabled={busy !== null}
+                onClick={() => handleShare(option.id)}
               >
-                <ShareIcon id={option.id} />
-              </span>
-              <span className="share-sheet__label">
-                {busy === option.id ? '处理中' : option.label}
-              </span>
-            </button>
-          ))}
-        </div>
+                <span
+                  className="share-sheet__icon"
+                  style={{
+                    background: option.id === 'copy' || option.id === 'twitter'
+                      ? 'var(--color-primary-soft)'
+                      : option.color,
+                    color: option.id === 'copy' ? 'var(--color-text-secondary)' : '#fff',
+                  }}
+                >
+                  <ShareIcon id={option.id} />
+                </span>
+                <span className="share-sheet__label">
+                  {busy === option.id ? '处理中' : option.label}
+                </span>
+              </button>
+            ))}
+          </div>
 
-        <button type="button" className="share-sheet__cancel btn btn--ghost" onClick={onClose}>
-          取消
-        </button>
+          <button type="button" className="share-sheet__cancel btn btn--ghost" onClick={onClose}>
+            取消
+          </button>
+        </div>
       </div>
-    </div>
+
+      {wechatGuideUrl && isWechatBrowser() && (
+        <div className="wechat-guide-overlay" role="dialog" aria-modal="true">
+          <div className="wechat-guide">
+            <p className="wechat-guide__tip">链接已复制，点击右上角 <strong>···</strong></p>
+            <p className="wechat-guide__tip">选择「分享到朋友圈」即可发布带封面卡片</p>
+            <p className="wechat-guide__url">{wechatGuideUrl}</p>
+            <button
+              type="button"
+              className="btn btn--primary btn--block"
+              onClick={() => {
+                setWechatGuideUrl(null)
+                onClose()
+              }}
+            >
+              知道了
+            </button>
+          </div>
+        </div>
+      )}
+    </>
   )
 }
