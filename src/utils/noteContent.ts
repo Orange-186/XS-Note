@@ -70,6 +70,27 @@ export function removeImageMarker(content: string, mediaId: string): string {
     .replace(/\n{3,}/g, '\n\n')
 }
 
+/** 修复正文中引用 ID 与 media 记录不一致的历史数据 */
+export function repairContentMediaIds(content: string, media: Array<{ id: string; media_type: string }>): string {
+  const markerIds = mediaIdsInContentOrder(content)
+  const mediaById = new Set(media.map((item) => item.id))
+  const orphanMarkerIds = markerIds.filter((id) => !mediaById.has(id))
+  if (orphanMarkerIds.length === 0) return content
+
+  const referencedIds = new Set(markerIds.filter((id) => mediaById.has(id)))
+  const spareImages = media.filter(
+    (item) => item.media_type === 'image' && !referencedIds.has(item.id),
+  )
+
+  let next = content
+  orphanMarkerIds.forEach((orphanId, index) => {
+    const replacement = spareImages[index]
+    if (!replacement) return
+    next = next.replace(`![[media:${orphanId}]]`, `![[media:${replacement.id}]]`)
+  })
+  return next
+}
+
 export function globalOffset(
   segments: ContentSegment[],
   segmentIndex: number,

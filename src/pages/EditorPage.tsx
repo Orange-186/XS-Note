@@ -10,7 +10,7 @@ import { useTheme } from '../hooks/useTheme'
 import type { LocalMedia, NoteMedia } from '../types/note'
 import { MAX_IMAGES, MAX_VIDEOS } from '../types/note'
 import { exportNoteAsImage } from '../utils/exportNote'
-import { contentHasImageMarkers, insertImageMarker, removeImageMarker } from '../utils/noteContent'
+import { contentHasImageMarkers, insertImageMarker, removeImageMarker, repairContentMediaIds } from '../utils/noteContent'
 import type { ShareLinkPayload } from '../utils/shareNote'
 
 function mapRemoteMedia(noteMedia?: NoteMedia[]): LocalMedia[] {
@@ -31,6 +31,11 @@ function migrateLegacyImages(content: string, media: LocalMedia[]): string {
     next = insertImageMarker(next, next.length, item.id)
   }
   return next
+}
+
+function prepareNoteContent(content: string, media: LocalMedia[]): string {
+  const migrated = migrateLegacyImages(content, media)
+  return repairContentMediaIds(migrated, media)
 }
 
 export function EditorPage() {
@@ -67,7 +72,8 @@ export function EditorPage() {
       }
       setTitle(note.title)
       const mappedMedia = mapRemoteMedia(note.note_media)
-      setContent(migrateLegacyImages(note.content, mappedMedia))
+      const preparedContent = prepareNoteContent(note.content, mappedMedia)
+      setContent(preparedContent)
       setMedia(mappedMedia)
       setLoading(false)
     })
@@ -97,7 +103,10 @@ export function EditorPage() {
     setError(null)
 
     try {
-      const { shareSynced } = await saveNote(id, user.id, title, content, media)
+      const { note: saved, shareSynced } = await saveNote(id, user.id, title, content, media)
+      const mappedMedia = mapRemoteMedia(saved.note_media)
+      setContent(prepareNoteContent(saved.content, mappedMedia))
+      setMedia(mappedMedia)
       dirtyRef.current = false
       if (shareSynced) {
         handleShareNotify('公开链接已同步')

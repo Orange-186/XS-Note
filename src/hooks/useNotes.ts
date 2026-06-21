@@ -176,6 +176,7 @@ export async function saveNote(
     const { data: mediaRow, error: mediaError } = await supabase
       .from('note_media')
       .insert({
+        id: item.id,
         note_id: noteId,
         user_id: userId,
         media_type: item.media_type,
