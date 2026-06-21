@@ -6,8 +6,13 @@ export interface SharePayload {
 }
 
 export interface ShareLinkPayload extends SharePayload {
+  /** 分享链接（优先 Edge Function 卡片 URL） */
   url: string
+  /** App 分享页 URL */
+  viewUrl?: string
   coverUrl?: string | null
+  /** Edge Function 卡片是否可用 */
+  cardReady?: boolean
 }
 
 export function buildShareText({ title, content }: SharePayload): string {
@@ -16,7 +21,7 @@ export function buildShareText({ title, content }: SharePayload): string {
   return body ? `${heading}\n\n${body}` : heading
 }
 
-export { buildAppShareUrl, buildPublicShareUrl } from './publishSharePage'
+export { buildAppShareUrl, buildPublicShareUrl, buildWechatCardUrl } from './publishSharePage'
 
 export function isWechatBrowser(): boolean {
   return /MicroMessenger/i.test(navigator.userAgent)

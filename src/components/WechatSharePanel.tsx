@@ -10,17 +10,18 @@ interface WechatSharePanelProps {
 }
 
 export function WechatSharePanel({ open, payload, onClose, onNotify }: WechatSharePanelProps) {
-  if (!open || !payload) return null
-
-  const title = payload.title.trim() || '无标题'
-  const summary = getContentSummary(payload.content, 120)
-  const cover = payload.coverUrl || `${window.location.origin}${import.meta.env.BASE_URL}og-default.png`
   const inWechat = isWechatBrowser()
 
   useEffect(() => {
     if (!open || !payload) return
     copyShareLink(payload.url).catch(() => {})
   }, [open, payload])
+
+  if (!open || !payload) return null
+
+  const title = payload.title.trim() || '无标题'
+  const summary = getContentSummary(payload.content, 120)
+  const cover = payload.coverUrl || `${window.location.origin}${import.meta.env.BASE_URL}og-default.png`
 
   const handleCopy = async () => {
     try {
@@ -41,6 +42,10 @@ export function WechatSharePanel({ open, payload, onClose, onNotify }: WechatSha
     }
   }
 
+  const handleOpenPreview = () => {
+    window.open(payload.url, '_blank', 'noopener,noreferrer')
+  }
+
   return (
     <div className="wechat-share-overlay" role="presentation" onClick={onClose}>
       <div
@@ -54,6 +59,12 @@ export function WechatSharePanel({ open, payload, onClose, onNotify }: WechatSha
           分享到朋友圈
         </h2>
 
+        <p className="wechat-share-panel__subtitle">
+          {payload.cardReady
+            ? '链接卡片预览（标题 · 摘要 · 封面）'
+            : '阅读链接（微信卡片需部署分享服务后生效）'}
+        </p>
+
         <article className="wechat-share-card">
           <img className="wechat-share-card__cover" src={cover} alt="" />
           <div className="wechat-share-card__body">
@@ -66,22 +77,34 @@ export function WechatSharePanel({ open, payload, onClose, onNotify }: WechatSha
 
         {inWechat ? (
           <p className="wechat-share-panel__tip">
-            链接已就绪。点击右上角 <strong>···</strong>，选择「分享到朋友圈」即可发布链接卡片。
+            {payload.cardReady
+              ? <>链接已复制。点击右上角 <strong>···</strong> →「分享到朋友圈」，粘贴链接即可显示上方卡片。</>
+              : <>链接已复制。粘贴到朋友圈后可直接阅读正文；带封面卡片需管理员部署分享服务。</>}
           </p>
         ) : (
           <p className="wechat-share-panel__tip">
-            先复制链接，再打开微信 → 朋友圈 → 长按粘贴发布。
+            {payload.cardReady
+              ? '链接已复制。打开微信 → 朋友圈 → 粘贴链接，即可显示带封面、标题和摘要的卡片。'
+              : '链接已复制。打开链接可阅读正文；微信朋友圈卡片预览需部署分享服务。'}
           </p>
         )}
 
         <div className="wechat-share-panel__actions">
           <button type="button" className="btn btn--primary btn--block" onClick={handleCopy}>
-            复制链接
+            复制分享链接
           </button>
           {canNativeShare() && (
             <button type="button" className="btn btn--ghost btn--block" onClick={handleNativeShare}>
               系统分享
             </button>
+          )}
+          <button type="button" className="btn btn--ghost btn--block" onClick={handleOpenPreview}>
+            预览分享页
+          </button>
+          {payload.viewUrl && (
+            <a className="btn btn--ghost btn--block" href={payload.viewUrl} target="_blank" rel="noopener noreferrer">
+              在 XS Note 中阅读
+            </a>
           )}
           <button type="button" className="btn btn--ghost btn--block" onClick={onClose}>
             完成

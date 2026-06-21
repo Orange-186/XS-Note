@@ -14,6 +14,15 @@ export interface SharedNoteView {
   }>
 }
 
+export interface PublishedShare {
+  /** 微信/社交平台链接卡片 URL（Edge Function，含 OG 标签） */
+  cardUrl: string
+  /** App 内分享页 URL（游客可读正文） */
+  viewUrl: string
+  /** Edge Function 是否已部署可用 */
+  cardReady: boolean
+}
+
 export function buildShareToken(userId: string, noteId: string): string {
   return `${userId}_${noteId}`
 }
@@ -30,14 +39,24 @@ function shareStorageBase(userId: string, noteId: string): string {
   return `${userId}/shares/${noteId}`
 }
 
-/** 游客打开的公开链接，指向 App 分享页（非 Storage HTML） */
-export function buildPublicShareUrl(userId: string, noteId: string): string {
-  return buildAppShareUrl(buildShareToken(userId, noteId))
+/** 微信链接卡片 URL：Edge Function 返回带 og:title/description/image 的 HTML */
+export function buildWechatCardUrl(userId: string, noteId: string): string {
+  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL?.trim().replace(/\/$/, '')
+  if (!supabaseUrl) {
+    throw new Error('Supabase 未配置，无法生成分享链接')
+  }
+  const token = buildShareToken(userId, noteId)
+  return `${supabaseUrl}/functions/v1/note-share/${token}`
 }
 
 export function buildAppShareUrl(token: string): string {
   const basePath = import.meta.env.BASE_URL.replace(/\/$/, '')
   return `${window.location.origin}${basePath}/share/${token}`
+}
+
+/** @deprecated 使用 buildWechatCardUrl */
+export function buildPublicShareUrl(userId: string, noteId: string): string {
+  return buildWechatCardUrl(userId, noteId)
 }
 
 function noteToSharedView(note: Note): SharedNoteView {
@@ -54,10 +73,20 @@ function noteToSharedView(note: Note): SharedNoteView {
   }
 }
 
-export async function publishNoteShare(note: Note, userId: string): Promise<string> {
+async function probeShareCard(cardUrl: string): Promise<boolean> {
+  try {
+    const response = await fetch(cardUrl, { method: 'GET', cache: 'no-store' })
+    const type = response.headers.get('content-type') ?? ''
+    return response.ok && type.includes('text/html')
+  } catch {
+    return false
+  }
+}
+
+export async function publishNoteShare(note: Note, userId: string): Promise<PublishedShare> {
   const shared = noteToSharedView(note)
   const base = shareStorageBase(userId, note.id)
-  const shareUrl = buildPublicShareUrl(userId, note.id)
+  const token = buildShareToken(userId, note.id)
   const jsonBytes = encodeUtf8(JSON.stringify(shared))
 
   const jsonUpload = await supabase.storage
@@ -70,7 +99,11 @@ export async function publishNoteShare(note: Note, userId: string): Promise<stri
 
   if (jsonUpload.error) throw new Error(jsonUpload.error.message)
 
-  return shareUrl
+  const cardUrl = buildWechatCardUrl(userId, note.id)
+  const viewUrl = buildAppShareUrl(token)
+  const cardReady = await probeShareCard(cardUrl)
+
+  return { cardUrl, viewUrl, cardReady }
 }
 
 export async function fetchPublishedShare(userId: string, noteId: string): Promise<SharedNoteView | null> {

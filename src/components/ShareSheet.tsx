@@ -118,10 +118,12 @@ async function buildShareLinkPayload(
   const note = await fetchNoteById(noteId)
   if (!note) throw new Error('笔记不存在')
 
-  const url = await publishNoteShare(note, userId)
+  const { cardUrl, viewUrl, cardReady } = await publishNoteShare(note, userId)
   return {
     ...payload,
-    url,
+    url: cardReady ? cardUrl : viewUrl,
+    viewUrl,
+    cardReady,
     coverUrl: note.cover_url ?? coverUrl,
   }
 }

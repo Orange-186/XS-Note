@@ -892,8 +892,15 @@ ul {
 }
 
 .wechat-share-panel__title {
-  margin: 0 0 var(--space-md);
+  margin: 0 0 var(--space-xs);
   font-size: var(--font-size-lg);
+  text-align: center;
+}
+
+.wechat-share-panel__subtitle {
+  margin: 0 0 var(--space-md);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-tertiary);
   text-align: center;
 }
 
