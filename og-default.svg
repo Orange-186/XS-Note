@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-label="XS Note">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#e8f5ee"/>
+      <stop offset="100%" stop-color="#c8e6d4"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="630" fill="url(#bg)"/>
+  <text x="600" y="300" text-anchor="middle" fill="#18924d" font-family="Arial, sans-serif" font-size="96" font-weight="700">XS Note</text>
+  <text x="600" y="380" text-anchor="middle" fill="#1e2d2c" font-family="Arial, sans-serif" font-size="42" opacity="0.7">Ä¶∞è√∞U</text>
+</svg>
