@@ -75,7 +75,12 @@ function noteToSharedView(note: Note): SharedNoteView {
 
 async function probeShareCard(cardUrl: string): Promise<boolean> {
   try {
-    const response = await fetch(cardUrl, { method: 'GET', cache: 'no-store' })
+    const response = await Promise.race([
+      fetch(cardUrl, { method: 'GET', cache: 'no-store' }),
+      new Promise<never>((_, reject) => {
+        window.setTimeout(() => reject(new Error('timeout')), 3000)
+      }),
+    ])
     const type = response.headers.get('content-type') ?? ''
     return response.ok && type.includes('text/html')
   } catch {
@@ -89,15 +94,17 @@ export async function publishNoteShare(note: Note, userId: string): Promise<Publ
   const token = buildShareToken(userId, note.id)
   const jsonBytes = encodeUtf8(JSON.stringify(shared))
 
+  const jsonPath = `${base}.json`
+  await supabase.storage.from('note-media').remove([jsonPath])
+
   const jsonUpload = await supabase.storage
     .from('note-media')
-    .upload(`${base}.json`, jsonBytes, {
-      upsert: true,
+    .upload(jsonPath, jsonBytes, {
       contentType: 'application/json; charset=utf-8',
       cacheControl: '300',
     })
 
-  if (jsonUpload.error) throw new Error(jsonUpload.error.message)
+  if (jsonUpload.error) throw new Error(`发布分享失败：${jsonUpload.error.message}`)
 
   const cardUrl = buildWechatCardUrl(userId, note.id)
   const viewUrl = buildAppShareUrl(token)

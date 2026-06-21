@@ -1,8 +1,7 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { fetchNoteById } from '../hooks/useNotes'
 import { canvasToPngFile, captureNoteElement } from '../utils/exportNote'
 import { publishNoteShare } from '../utils/publishSharePage'
-import { WechatSharePanel } from './WechatSharePanel'
 import {
   buildShareText,
   canNativeShare,
@@ -24,6 +23,7 @@ interface ShareSheetProps {
   coverUrl?: string | null
   exportElement: HTMLElement | null
   onPrepareShare?: () => Promise<boolean>
+  onOpenWechatShare: (payload: ShareLinkPayload) => void
   onClose: () => void
   onNotify: (message: string) => void
 }
@@ -136,17 +136,23 @@ export function ShareSheet({
   coverUrl,
   exportElement,
   onPrepareShare,
+  onOpenWechatShare,
   onClose,
   onNotify,
 }: ShareSheetProps) {
   const [busy, setBusy] = useState<ShareAction | null>(null)
-  const [wechatShare, setWechatShare] = useState<ShareLinkPayload | null>(null)
+  const [shareError, setShareError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (open) setShareError(null)
+  }, [open])
 
   const visibleOptions = SHARE_OPTIONS.filter((option) => !option.hidden?.())
 
   const handleShare = async (action: ShareAction) => {
     if (busy) return
     setBusy(action)
+    setShareError(null)
 
     try {
       switch (action) {
@@ -158,7 +164,7 @@ export function ShareSheet({
         }
         case 'wechat': {
           const linkPayload = await buildShareLinkPayload(noteId, userId, payload, coverUrl, onPrepareShare)
-          setWechatShare(linkPayload)
+          onOpenWechatShare(linkPayload)
           onClose()
           break
         }
@@ -207,7 +213,9 @@ export function ShareSheet({
       }
     } catch (err) {
       if (err instanceof Error && err.name === 'AbortError') return
-      onNotify(err instanceof Error ? err.message : '分享失败')
+      const message = err instanceof Error ? err.message : '分享失败'
+      setShareError(message)
+      onNotify(message)
     } finally {
       setBusy(null)
     }
@@ -219,7 +227,11 @@ export function ShareSheet({
   return (
     <>
       {open && (
-      <div className="share-sheet-overlay" role="presentation" onClick={onClose}>
+      <div
+        className="share-sheet-overlay"
+        role="presentation"
+        onClick={busy ? undefined : onClose}
+      >
         <div
           className="share-sheet"
           role="dialog"
@@ -231,6 +243,9 @@ export function ShareSheet({
           <h2 id="share-sheet-title" className="share-sheet__title">
             分享到
           </h2>
+          {shareError && (
+            <p className="share-sheet__error" role="alert">{shareError}</p>
+          )}
           <p className="share-sheet__preview">{previewText}</p>
           {noteId && userId && (
             <p className="share-sheet__hint">微信分享将发布公开链接，包含标题、摘要与封面图</p>
@@ -269,13 +284,6 @@ export function ShareSheet({
         </div>
       </div>
       )}
-
-      <WechatSharePanel
-        open={wechatShare !== null}
-        payload={wechatShare}
-        onClose={() => setWechatShare(null)}
-        onNotify={onNotify}
-      />
     </>
   )
 }

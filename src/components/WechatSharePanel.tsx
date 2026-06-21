@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { getContentSummary } from '../utils/formatDate'
 import { canNativeShare, copyShareLink, isWechatBrowser, nativeShare, type ShareLinkPayload } from '../utils/shareNote'
 
@@ -46,7 +47,7 @@ export function WechatSharePanel({ open, payload, onClose, onNotify }: WechatSha
     window.open(payload.url, '_blank', 'noopener,noreferrer')
   }
 
-  return (
+  return createPortal(
     <div className="wechat-share-overlay" role="presentation" onClick={onClose}>
       <div
         className="wechat-share-panel"
@@ -111,6 +112,7 @@ export function WechatSharePanel({ open, payload, onClose, onNotify }: WechatSha
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }

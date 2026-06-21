@@ -2,12 +2,14 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { ThemeToggle } from '../components/ThemeToggle'
 import { ShareSheet } from '../components/ShareSheet'
+import { WechatSharePanel } from '../components/WechatSharePanel'
 import { useAuth } from '../contexts/AuthContext'
 import { fetchNoteById, saveNote } from '../hooks/useNotes'
 import { useTheme } from '../hooks/useTheme'
 import type { LocalMedia, NoteMedia } from '../types/note'
 import { MAX_IMAGES, MAX_VIDEOS } from '../types/note'
 import { exportNoteAsImage } from '../utils/exportNote'
+import type { ShareLinkPayload } from '../utils/shareNote'
 
 function mapRemoteMedia(noteMedia?: NoteMedia[]): LocalMedia[] {
   return (noteMedia ?? []).map((m) => ({
@@ -33,9 +35,11 @@ export function EditorPage() {
   const [error, setError] = useState<string | null>(null)
   const [exporting, setExporting] = useState(false)
   const [shareOpen, setShareOpen] = useState(false)
+  const [wechatShare, setWechatShare] = useState<ShareLinkPayload | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
 
   const dirtyRef = useRef(false)
+  const savingRef = useRef(false)
   const exportRef = useRef<HTMLDivElement>(null)
   const imageInputRef = useRef<HTMLInputElement>(null)
   const videoInputRef = useRef<HTMLInputElement>(null)
@@ -64,7 +68,13 @@ export function EditorPage() {
   const videoCount = media.filter((m) => m.media_type === 'video' && !m.markedForDelete).length
 
   const handleSave = useCallback(async (): Promise<boolean> => {
-    if (!id || !user || saving) return false
+    if (!id || !user) return false
+
+    while (savingRef.current) {
+      await new Promise((resolve) => window.setTimeout(resolve, 100))
+    }
+
+    savingRef.current = true
     setSaving(true)
     setError(null)
 
@@ -76,9 +86,16 @@ export function EditorPage() {
       setError(err instanceof Error ? err.message : '保存失败')
       return false
     } finally {
+      savingRef.current = false
       setSaving(false)
     }
-  }, [id, user, saving, title, content, media])
+  }, [id, user, title, content, media])
+
+  const handlePrepareShare = useCallback(async (): Promise<boolean> => {
+    if (!id || !user) return false
+    if (!dirtyRef.current) return true
+    return handleSave()
+  }, [handleSave, id, user])
 
   const handleBack = async () => {
     if (dirtyRef.current) {
@@ -191,7 +208,6 @@ export function EditorPage() {
       <main className="app-main editor-main">
         <div className="content-container editor-container">
           {error && <div className="alert alert--error" role="alert">{error}</div>}
-          {notice && <div className="alert alert--success" role="status">{notice}</div>}
 
           <div ref={exportRef} className="editor-body">
             <input
@@ -292,10 +308,22 @@ export function EditorPage() {
         payload={{ title, content }}
         coverUrl={coverUrl}
         exportElement={exportRef.current}
-        onPrepareShare={handleSave}
+        onPrepareShare={handlePrepareShare}
+        onOpenWechatShare={setWechatShare}
         onClose={() => setShareOpen(false)}
         onNotify={handleShareNotify}
       />
+
+      <WechatSharePanel
+        open={wechatShare !== null}
+        payload={wechatShare}
+        onClose={() => setWechatShare(null)}
+        onNotify={handleShareNotify}
+      />
+
+      {notice && (
+        <div className="share-toast" role="status">{notice}</div>
+      )}
     </div>
   )
 }
