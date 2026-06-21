@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { getContentSummary } from '../utils/formatDate'
+import { markdownToHtml } from '../utils/shareContent'
 import { fetchPublishedShare, parseShareToken, type SharedNoteView } from '../utils/publishSharePage'
 
 function setMetaTag(name: string, content: string, property = false) {
@@ -104,7 +105,10 @@ export function SharePage() {
           <h1 className="share-page__title">{title}</h1>
           <p className="share-page__summary">{summary}</p>
           {note.content.trim() && (
-            <div className="share-page__content">{note.content}</div>
+            <div
+              className="share-page__content"
+              dangerouslySetInnerHTML={{ __html: markdownToHtml(note.content) }}
+            />
           )}
 
           {images.length > 1 && (

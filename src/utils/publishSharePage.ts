@@ -1,6 +1,7 @@
 import { supabase } from '../lib/supabase'
 import type { Note } from '../types/note'
 import { getContentSummary } from './formatDate'
+import { encodeUtf8, encodeUtf8WithBom, escapeHtml, markdownToHtml } from './shareContent'
 
 export interface SharedNoteView {
   title: string
@@ -41,15 +42,6 @@ export function buildAppShareUrl(token: string): string {
   return `${window.location.origin}${basePath}/share/${token}`
 }
 
-function escapeHtml(value: string): string {
-  return value
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#39;')
-}
-
 function pickCover(note: SharedNoteView, fallback: string): string {
   if (note.cover_url) return note.cover_url
   const image = note.note_media.find((item) => item.media_type === 'image')
@@ -70,7 +62,7 @@ function renderShareHtml(
   const image = pickCover(note, defaultCoverUrl())
   const safeTitle = escapeHtml(title)
   const safeDescription = escapeHtml(description)
-  const safeContent = escapeHtml(note.content.trim() || '暂无正文').replace(/\n/g, '<br />')
+  const safeContent = markdownToHtml(note.content.trim() || '暂无正文')
   const safeImage = escapeHtml(image)
   const safeShareUrl = escapeHtml(shareUrl)
   const safeAppShareUrl = escapeHtml(appShareUrl)
@@ -104,7 +96,11 @@ function renderShareHtml(
     .brand { font-size: 12px; letter-spacing: .08em; color: #18924d; margin-bottom: 8px; }
     h1 { margin: 0 0 12px; font-size: 24px; line-height: 1.35; }
     .summary { margin: 0 0 16px; color: rgba(30,45,44,.65); line-height: 1.7; }
-    .content { white-space: pre-wrap; line-height: 1.8; }
+    .content { line-height: 1.8; }
+    .content h2, .content h3, .content h4 { margin: 1.2em 0 0.5em; line-height: 1.4; }
+    .content p { margin: 0.5em 0; }
+    .content pre { overflow-x: auto; padding: 12px; border-radius: 8px; background: #f3f6f5; }
+    .content code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.92em; }
     .link { display: inline-block; margin-top: 20px; color: #18924d; text-decoration: none; font-weight: 600; }
   </style>
 </head>
@@ -146,18 +142,18 @@ export async function publishNoteShare(note: Note, userId: string): Promise<stri
   const appShareUrl = buildAppShareUrl(buildShareToken(userId, note.id))
   const html = renderShareHtml(shared, shareUrl, appShareUrl)
 
-  const jsonBlob = new Blob([JSON.stringify(shared)], { type: 'application/json' })
-  const htmlBlob = new Blob([html], { type: 'text/html;charset=utf-8' })
+  const jsonBytes = encodeUtf8(JSON.stringify(shared))
+  const htmlBytes = encodeUtf8WithBom(html)
 
   const jsonUpload = await supabase.storage
     .from('note-media')
-    .upload(`${base}.json`, jsonBlob, { upsert: true, contentType: 'application/json', cacheControl: '300' })
+    .upload(`${base}.json`, jsonBytes, { upsert: true, contentType: 'application/json', cacheControl: '300' })
 
   if (jsonUpload.error) throw new Error(jsonUpload.error.message)
 
   const htmlUpload = await supabase.storage
     .from('note-media')
-    .upload(`${base}.html`, htmlBlob, { upsert: true, contentType: 'text/html;charset=utf-8', cacheControl: '300' })
+    .upload(`${base}.html`, htmlBytes, { upsert: true, contentType: 'text/html', cacheControl: '300' })
 
   if (htmlUpload.error) throw new Error(htmlUpload.error.message)
 
@@ -169,5 +165,6 @@ export async function fetchPublishedShare(userId: string, noteId: string): Promi
   const { data } = supabase.storage.from('note-media').getPublicUrl(path)
   const response = await fetch(`${data.publicUrl}?t=${Date.now()}`)
   if (!response.ok) return null
-  return response.json() as Promise<SharedNoteView>
+  const text = await response.text()
+  return JSON.parse(text.replace(/^\uFEFF/, '')) as SharedNoteView
 }

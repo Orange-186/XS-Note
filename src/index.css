@@ -805,7 +805,7 @@ ul {
 }
 
 .share-sheet__preview {
-  margin: 0 0 var(--space-lg);
+  margin: 0 0 var(--space-sm);
   padding: var(--space-sm) var(--space-md);
   border-radius: var(--radius-md);
   background: var(--color-primary-soft);
@@ -814,6 +814,14 @@ ul {
   line-height: 1.5;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+.share-sheet__hint {
+  margin: 0 0 var(--space-lg);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-tertiary);
+  text-align: center;
+  line-height: 1.5;
 }
 
 .share-sheet__grid {
@@ -864,36 +872,151 @@ ul {
   min-height: 44px;
 }
 
-/* Toast */
-
-.toast {
+.wechat-guide-overlay {
   position: fixed;
-  left: 50%;
-  bottom: calc(var(--fab-size) + var(--space-lg) + var(--safe-bottom));
-  transform: translateX(-50%);
-  z-index: 300;
-  max-width: min(340px, calc(100vw - var(--space-xl) * 2));
-  padding: var(--space-sm) var(--space-md);
-  background: rgba(20, 28, 27, 0.92);
-  color: #fff;
-  border-radius: var(--radius-md);
-  font-size: var(--font-size-sm);
-  line-height: 1.5;
-  text-align: center;
-  box-shadow: var(--shadow-md);
-  pointer-events: none;
-  animation: toast-in 0.22s ease;
+  inset: 0;
+  z-index: 220;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-lg);
+  background: rgba(20, 25, 24, 0.55);
 }
 
-@keyframes toast-in {
-  from {
-    opacity: 0;
-    transform: translateX(-50%) translateY(8px);
-  }
-  to {
-    opacity: 1;
-    transform: translateX(-50%) translateY(0);
-  }
+.wechat-guide {
+  width: 100%;
+  max-width: 360px;
+  background: var(--color-surface-elevated);
+  border-radius: var(--radius-lg);
+  padding: var(--space-lg);
+  box-shadow: var(--shadow-md);
+}
+
+.wechat-guide__tip {
+  margin: 0 0 var(--space-sm);
+  text-align: center;
+  line-height: 1.6;
+  color: var(--color-text-secondary);
+}
+
+.wechat-guide__url {
+  margin: var(--space-md) 0 var(--space-lg);
+  padding: var(--space-sm) var(--space-md);
+  border-radius: var(--radius-md);
+  background: var(--color-primary-soft);
+  font-size: var(--font-size-xs);
+  line-height: 1.5;
+  word-break: break-all;
+  color: var(--color-text-secondary);
+}
+
+/* Public share page */
+
+.share-page {
+  min-height: 100%;
+  background: var(--color-bg);
+  padding: var(--space-lg) calc(var(--space-md) + var(--safe-right)) calc(var(--space-xl) + var(--safe-bottom))
+    calc(var(--space-md) + var(--safe-left));
+}
+
+.share-page__card {
+  width: 100%;
+  max-width: var(--container-max);
+  margin: 0 auto;
+  background: var(--color-surface);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  box-shadow: var(--shadow-md);
+}
+
+.share-page__card--empty {
+  padding: var(--space-xl);
+  text-align: center;
+}
+
+.share-page__card--empty h1 {
+  margin: 0 0 var(--space-sm);
+}
+
+.share-page__card--empty p {
+  margin: 0 0 var(--space-lg);
+  color: var(--color-text-secondary);
+}
+
+.share-page__cover img {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  display: block;
+  background: var(--color-primary-soft);
+}
+
+.share-page__body {
+  padding: var(--space-lg);
+}
+
+.share-page__brand {
+  margin: 0 0 var(--space-sm);
+  font-size: var(--font-size-xs);
+  letter-spacing: 0.08em;
+  color: var(--color-primary);
+}
+
+.share-page__title {
+  margin: 0 0 var(--space-sm);
+  font-size: var(--font-size-xl);
+  line-height: 1.35;
+}
+
+.share-page__summary {
+  margin: 0 0 var(--space-md);
+  color: var(--color-text-secondary);
+  line-height: 1.6;
+}
+
+.share-page__content {
+  line-height: 1.8;
+}
+
+.share-page__content h2,
+.share-page__content h3,
+.share-page__content h4 {
+  margin: 1.2em 0 0.5em;
+  line-height: 1.4;
+}
+
+.share-page__content p {
+  margin: 0.5em 0;
+}
+
+.share-page__content pre {
+  overflow-x: auto;
+  padding: 12px;
+  border-radius: var(--radius-sm);
+  background: var(--color-primary-soft);
+}
+
+.share-page__content code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.92em;
+}
+
+.share-page__gallery {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: var(--space-sm);
+  margin-top: var(--space-lg);
+}
+
+.share-page__gallery img {
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+  border-radius: var(--radius-sm);
+}
+
+.share-page__actions {
+  margin-top: var(--space-xl);
 }
 
 /* Alerts & states */
