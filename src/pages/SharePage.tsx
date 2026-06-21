@@ -1,8 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { NoteContentRenderer } from '../components/NoteContentRenderer'
+import { NoteContentView } from '../components/NoteContentView'
 import { getContentSummary } from '../utils/formatDate'
-import { parseContentSegments } from '../utils/noteContent'
 import { fetchPublishedShare, parseShareToken, type SharedNoteView } from '../utils/publishSharePage'
 
 function setMetaTag(name: string, content: string, property = false) {
@@ -98,15 +97,7 @@ export function SharePage() {
   }
 
   const title = note.title.trim() || '无标题'
-  const media = note.note_media.map((item) => ({
-    id: item.id ?? item.public_url,
-    public_url: item.public_url,
-    media_type: item.media_type,
-  }))
-  const segments = parseContentSegments(note.content, media)
-  const videos = [...note.note_media]
-    .filter((item) => item.media_type === 'video')
-    .sort((a, b) => a.sort_order - b.sort_order)
+  const media = [...note.note_media].sort((a, b) => a.sort_order - b.sort_order)
 
   return (
     <SharePageShell>
@@ -114,18 +105,8 @@ export function SharePage() {
         <div className="share-page__body editor-body">
           <p className="share-page__brand">XS NOTE · 公开分享</p>
           <h1 className="share-page__title editor-title">{title}</h1>
-          {segments.length > 0 && (
-            <NoteContentRenderer segments={segments} className="share-page__content note-body-text" />
-          )}
-
-          {videos.length > 0 && (
-            <div className="media-grid">
-              {videos.map((item) => (
-                <div key={item.public_url} className="media-item">
-                  <video src={item.public_url} controls preload="metadata" />
-                </div>
-              ))}
-            </div>
+          {(note.content.trim() || media.length > 0) && (
+            <NoteContentView content={note.content} media={media} />
           )}
 
           <div className="share-page__actions">

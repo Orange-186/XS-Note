@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import type { LocalMedia, Note, NoteMedia } from '../types/note'
+import { mediaIdsInContentOrder } from '../utils/noteContent'
 import { removePublishedShare, syncPublishedShare } from '../utils/publishSharePage'
 
 function sortNotes(notes: Note[]): Note[] {
@@ -117,6 +118,18 @@ export async function createNote(userId: string): Promise<Note> {
   return data as Note
 }
 
+function applyMediaSortOrder(content: string, media: LocalMedia[]): LocalMedia[] {
+  const orderedIds = mediaIdsInContentOrder(content)
+  const sortMap = new Map<string, number>()
+  orderedIds.forEach((id, index) => sortMap.set(id, index))
+
+  let nextOrder = orderedIds.length
+  return media.map((item) => ({
+    ...item,
+    sort_order: sortMap.has(item.id) ? sortMap.get(item.id)! : nextOrder++,
+  }))
+}
+
 export async function saveNote(
   noteId: string,
   userId: string,
@@ -124,7 +137,8 @@ export async function saveNote(
   content: string,
   media: LocalMedia[],
 ): Promise<{ note: Note; shareSynced: boolean }> {
-  const activeMedia = media.filter((m) => !m.markedForDelete)
+  const sortedMedia = applyMediaSortOrder(content, media)
+  const activeMedia = sortedMedia.filter((m) => !m.markedForDelete)
   const coverUrl = activeMedia.find((m) => m.media_type === 'image')?.public_url ?? null
 
   const { error: updateError } = await supabase
@@ -138,13 +152,13 @@ export async function saveNote(
 
   if (updateError) throw updateError
 
-  const toDelete = media.filter((m) => m.markedForDelete && m.storage_path)
+  const toDelete = sortedMedia.filter((m) => m.markedForDelete && m.storage_path)
   if (toDelete.length) {
     await supabase.storage.from('note-media').remove(toDelete.map((m) => m.storage_path!))
     await supabase.from('note_media').delete().in('id', toDelete.map((m) => m.id))
   }
 
-  const toUpload = media.filter((m) => m.isNew && m.file && !m.markedForDelete)
+  const toUpload = sortedMedia.filter((m) => m.isNew && m.file && !m.markedForDelete)
   const uploadedMedia: NoteMedia[] = []
 
   for (const item of toUpload) {

@@ -8,7 +8,7 @@ export interface SharedNoteView {
   cover_url: string | null
   updated_at: string
   note_media: Array<{
-    id?: string
+    id: string
     media_type: 'image' | 'video'
     public_url: string
     sort_order: number

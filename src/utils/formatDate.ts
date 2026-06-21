@@ -1,3 +1,5 @@
+import { stripImageMarkers } from './noteContent'
+
 const rtf = new Intl.RelativeTimeFormat('zh-CN', { numeric: 'auto' })
 
 export function formatRelativeTime(dateStr: string): string {
@@ -20,8 +22,6 @@ export function formatRelativeTime(dateStr: string): string {
     day: 'numeric',
   })
 }
-
-import { stripImageMarkers } from './noteContent'
 
 export function getContentSummary(content: string, maxLength = 80): string {
   const trimmed = stripImageMarkers(content)

@@ -1,154 +1,118 @@
-import type { LocalMedia } from '../types/note'
-
-export const IMG_MARKER_RE = /\{\{img:([a-zA-Z0-9-]+)\}\}/g
-
-export type ContentBlock =
-  | { type: 'text'; id: string; text: string }
-  | { type: 'image'; id: string; mediaId: string }
+export const IMAGE_MARKER_RE = /!\[\[media:([0-9a-f-]{36})\]\]/gi
 
 export type ContentSegment =
-  | { type: 'text'; text: string }
-  | { type: 'image'; mediaId: string; url: string; alt: string }
+  | { type: 'text'; value: string }
+  | { type: 'image'; id: string }
 
-export function contentToBlocks(content: string): ContentBlock[] {
-  const blocks: ContentBlock[] = []
-  const parts = content.split(IMG_MARKER_RE)
+export function parseNoteContent(content: string): ContentSegment[] {
+  const segments: ContentSegment[] = []
+  const re = new RegExp(IMAGE_MARKER_RE.source, 'gi')
+  let lastIndex = 0
+  let match: RegExpExecArray | null
 
-  for (let i = 0; i < parts.length; i++) {
-    if (i % 2 === 0) {
-      if (parts[i]) {
-        blocks.push({ type: 'text', id: crypto.randomUUID(), text: parts[i] })
-      }
-    } else {
-      blocks.push({ type: 'image', id: crypto.randomUUID(), mediaId: parts[i] })
+  while ((match = re.exec(content)) !== null) {
+    if (match.index > lastIndex) {
+      segments.push({ type: 'text', value: content.slice(lastIndex, match.index) })
     }
+    segments.push({ type: 'image', id: match[1] })
+    lastIndex = match.index + match[0].length
   }
 
-  if (blocks.length === 0) {
-    blocks.push({ type: 'text', id: crypto.randomUUID(), text: '' })
+  if (lastIndex < content.length) {
+    segments.push({ type: 'text', value: content.slice(lastIndex) })
   }
 
-  return blocks
+  if (segments.length === 0) {
+    segments.push({ type: 'text', value: '' })
+  }
+
+  return segments
 }
 
-export function blocksToContent(blocks: ContentBlock[]): string {
-  return blocks
-    .map((block) => (block.type === 'text' ? block.text : `{{img:${block.mediaId}}}`))
+export function serializeNoteContent(segments: ContentSegment[]): string {
+  return segments
+    .map((segment) => (segment.type === 'text' ? segment.value : `![[media:${segment.id}]]`))
     .join('')
 }
 
-function mergeAdjacentTextBlocks(blocks: ContentBlock[]): ContentBlock[] {
-  const merged: ContentBlock[] = []
-
-  for (const block of blocks) {
-    const prev = merged[merged.length - 1]
-    if (block.type === 'text' && prev?.type === 'text') {
-      prev.text += block.text
-    } else if (block.type === 'text' && !block.text) {
-      continue
-    } else {
-      merged.push(block.type === 'text' ? { ...block } : { ...block })
-    }
-  }
-
-  if (merged.length === 0) {
-    merged.push({ type: 'text', id: crypto.randomUUID(), text: '' })
-  }
-
-  return merged
-}
-
-export function insertImageBlock(
-  blocks: ContentBlock[],
-  textBlockIndex: number,
-  cursorPos: number,
-  mediaId: string,
-): ContentBlock[] {
-  const block = blocks[textBlockIndex]
-  if (!block || block.type !== 'text') {
-    return mergeAdjacentTextBlocks([
-      ...blocks,
-      { type: 'image', id: crypto.randomUUID(), mediaId },
-      { type: 'text', id: crypto.randomUUID(), text: '' },
-    ])
-  }
-
-  const before = block.text.slice(0, cursorPos)
-  const after = block.text.slice(cursorPos)
-
-  const next: ContentBlock[] = [
-    ...blocks.slice(0, textBlockIndex),
-    ...(before ? [{ type: 'text' as const, id: crypto.randomUUID(), text: before }] : []),
-    { type: 'image', id: crypto.randomUUID(), mediaId },
-    ...(after ? [{ type: 'text' as const, id: crypto.randomUUID(), text: after }] : []),
-    ...blocks.slice(textBlockIndex + 1),
-  ]
-
-  return mergeAdjacentTextBlocks(next)
-}
-
-export function removeImageBlock(blocks: ContentBlock[], blockIndex: number): ContentBlock[] {
-  return mergeAdjacentTextBlocks(blocks.filter((_, index) => index !== blockIndex))
-}
-
 export function stripImageMarkers(content: string): string {
-  return content.replace(IMG_MARKER_RE, ' ').replace(/\s+/g, ' ').trim()
+  return content
+    .replace(new RegExp(IMAGE_MARKER_RE.source, 'gi'), ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
 }
 
-export function appendMissingImageMarkers(content: string, mediaIds: string[]): string {
-  let result = content
-  for (const mediaId of mediaIds) {
-    const marker = `{{img:${mediaId}}}`
-    if (!result.includes(marker)) {
-      result += `${result.endsWith('\n') || !result ? '' : '\n'}${marker}\n`
-    }
-  }
-  return result
+export function contentHasImageMarkers(content: string): boolean {
+  return new RegExp(IMAGE_MARKER_RE.source, 'i').test(content)
 }
 
-export function resolveEndInsertPoint(blocks: ContentBlock[]): { blockIndex: number; cursor: number } {
-  for (let i = blocks.length - 1; i >= 0; i--) {
-    const block = blocks[i]
-    if (block.type === 'text') {
-      return { blockIndex: i, cursor: block.text.length }
-    }
-  }
-  return { blockIndex: 0, cursor: 0 }
-}
-
-export type InsertImagePosition = { blockIndex: number; cursor: number }
-
-export function collectReferencedMediaIds(content: string): Set<string> {
-  const ids = new Set<string>()
-  for (const match of content.matchAll(IMG_MARKER_RE)) {
-    ids.add(match[1])
+export function mediaIdsInContentOrder(content: string): string[] {
+  const ids: string[] = []
+  const re = new RegExp(IMAGE_MARKER_RE.source, 'gi')
+  let match: RegExpExecArray | null
+  while ((match = re.exec(content)) !== null) {
+    ids.push(match[1])
   }
   return ids
 }
 
-export function resolveMediaUrl(mediaId: string, media: LocalMedia[]): string | null {
-  const item = media.find((m) => m.id === mediaId && !m.markedForDelete)
-  return item?.public_url ?? null
+export function insertImageMarker(content: string, offset: number, mediaId: string): string {
+  const marker = `\n![[media:${mediaId}]]\n`
+  const safeOffset = Math.max(0, Math.min(offset, content.length))
+  return content.slice(0, safeOffset) + marker + content.slice(safeOffset)
 }
 
-export function parseContentSegments(
-  content: string,
-  media: Array<{ id: string; public_url: string; media_type: string; markedForDelete?: boolean }>,
-): ContentSegment[] {
-  const segments: ContentSegment[] = []
-  const parts = content.split(IMG_MARKER_RE)
+export function removeImageMarker(content: string, mediaId: string): string {
+  const marker = `![[media:${mediaId}]]`
+  return content
+    .split(marker)
+    .join('')
+    .replace(/\n{3,}/g, '\n\n')
+}
 
-  for (let i = 0; i < parts.length; i++) {
-    if (i % 2 === 0) {
-      if (parts[i]) segments.push({ type: 'text', text: parts[i] })
-    } else {
-      const mediaId = parts[i]
-      const item = media.find((m) => m.id === mediaId && !m.markedForDelete)
-      if (item?.media_type === 'image') {
-        segments.push({ type: 'image', mediaId, url: item.public_url, alt: '' })
-      }
-    }
+export function globalOffset(
+  segments: ContentSegment[],
+  segmentIndex: number,
+  localOffset: number,
+): number {
+  let offset = 0
+  for (let i = 0; i < segmentIndex; i++) {
+    const segment = segments[i]
+    if (segment.type === 'text') offset += segment.value.length
+    else offset += `![[media:${segment.id}]]`.length
+  }
+  return offset + localOffset
+}
+
+export function getTextareaCaretRect(textarea: HTMLTextAreaElement, position: number): DOMRect {
+  const style = window.getComputedStyle(textarea)
+  const mirror = document.createElement('div')
+  const properties = [
+    'boxSizing', 'width', 'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft',
+    'borderTopWidth', 'borderRightWidth', 'borderBottomWidth', 'borderLeftWidth',
+    'fontFamily', 'fontSize', 'fontWeight', 'fontStyle', 'letterSpacing', 'textTransform',
+    'wordSpacing', 'textIndent', 'lineHeight', 'whiteSpace', 'wordBreak', 'overflowWrap',
+  ] as const
+
+  mirror.style.position = 'absolute'
+  mirror.style.visibility = 'hidden'
+  mirror.style.whiteSpace = 'pre-wrap'
+  mirror.style.wordBreak = 'break-word'
+  mirror.style.top = '0'
+  mirror.style.left = '-9999px'
+
+  for (const prop of properties) {
+    mirror.style[prop] = style[prop]
   }
 
-  return segments
+  const value = textarea.value.substring(0, position)
+  mirror.textContent = value
+  const marker = document.createElement('span')
+  marker.textContent = value.length < textarea.value.length ? textarea.value.charAt(position) || '.' : '.'
+  mirror.appendChild(marker)
+  document.body.appendChild(mirror)
+
+  const rect = marker.getBoundingClientRect()
+  document.body.removeChild(mirror)
+  return rect
 }

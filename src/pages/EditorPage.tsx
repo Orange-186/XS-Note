@@ -1,17 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { ThemeToggle } from '../components/ThemeToggle'
+import { NoteEditor } from '../components/NoteEditor'
 import { ShareSheet } from '../components/ShareSheet'
 import { WechatSharePanel } from '../components/WechatSharePanel'
-import { NoteContentEditor } from '../components/NoteContentEditor'
 import { useAuth } from '../contexts/AuthContext'
-import { useKeyboardInset } from '../hooks/useKeyboardInset'
 import { fetchNoteById, saveNote } from '../hooks/useNotes'
 import { useTheme } from '../hooks/useTheme'
 import type { LocalMedia, NoteMedia } from '../types/note'
 import { MAX_IMAGES, MAX_VIDEOS } from '../types/note'
-import { appendMissingImageMarkers, blocksToContent, collectReferencedMediaIds, contentToBlocks, insertImageBlock, type InsertImagePosition } from '../utils/noteContent'
 import { exportNoteAsImage } from '../utils/exportNote'
+import { contentHasImageMarkers, insertImageMarker, removeImageMarker } from '../utils/noteContent'
 import type { ShareLinkPayload } from '../utils/shareNote'
 
 function mapRemoteMedia(noteMedia?: NoteMedia[]): LocalMedia[] {
@@ -22,6 +21,16 @@ function mapRemoteMedia(noteMedia?: NoteMedia[]): LocalMedia[] {
     storage_path: m.storage_path,
     sort_order: m.sort_order,
   }))
+}
+
+function migrateLegacyImages(content: string, media: LocalMedia[]): string {
+  if (contentHasImageMarkers(content)) return content
+
+  let next = content
+  for (const item of media.filter((m) => m.media_type === 'image')) {
+    next = insertImageMarker(next, next.length, item.id)
+  }
+  return next
 }
 
 export function EditorPage() {
@@ -46,10 +55,6 @@ export function EditorPage() {
   const exportRef = useRef<HTMLDivElement>(null)
   const imageInputRef = useRef<HTMLInputElement>(null)
   const videoInputRef = useRef<HTMLInputElement>(null)
-  const insertImageRef = useRef<(mediaId: string, position?: InsertImagePosition) => void>(() => {})
-  const pendingInsertRef = useRef<InsertImagePosition | null>(null)
-
-  useKeyboardInset()
 
   useEffect(() => {
     if (!id) return
@@ -62,15 +67,8 @@ export function EditorPage() {
       }
       setTitle(note.title)
       const mappedMedia = mapRemoteMedia(note.note_media)
-      const legacyImageIds = mappedMedia
-        .filter((m) => m.media_type === 'image')
-        .map((m) => m.id)
-      const normalizedContent = appendMissingImageMarkers(note.content, legacyImageIds)
-      setContent(normalizedContent)
+      setContent(migrateLegacyImages(note.content, mappedMedia))
       setMedia(mappedMedia)
-      if (normalizedContent !== note.content) {
-        dirtyRef.current = true
-      }
       setLoading(false)
     })
   }, [id])
@@ -132,24 +130,6 @@ export function EditorPage() {
     await handleSave()
   }
 
-  const handleAddImageRequest = (position: InsertImagePosition) => {
-    if (imageCount >= MAX_IMAGES) {
-      setError(`图片最多 ${MAX_IMAGES} 张`)
-      return
-    }
-    pendingInsertRef.current = position
-    imageInputRef.current?.click()
-  }
-
-  const openImagePickerAtCursor = () => {
-    if (imageCount >= MAX_IMAGES) {
-      setError(`图片最多 ${MAX_IMAGES} 张`)
-      return
-    }
-    pendingInsertRef.current = null
-    imageInputRef.current?.click()
-  }
-
   const addFiles = (files: FileList | null, type: 'image' | 'video') => {
     if (!files?.length) return
 
@@ -163,74 +143,39 @@ export function EditorPage() {
     }
 
     const selected = Array.from(files).slice(0, remaining)
+    let nextContent = content
 
-    if (type === 'image') {
-      const newItems: LocalMedia[] = selected.map((file, index) => ({
-        id: crypto.randomUUID(),
+    const next: LocalMedia[] = selected.map((file, index) => {
+      const mediaId = crypto.randomUUID()
+      if (type === 'image') {
+        nextContent = insertImageMarker(nextContent, nextContent.length, mediaId)
+      }
+
+      return {
+        id: mediaId,
         file,
-        media_type: 'image' as const,
+        media_type: type,
         public_url: URL.createObjectURL(file),
         sort_order: media.length + index,
         isNew: true,
-      }))
-
-      setMedia((prev) => [...prev, ...newItems])
-
-      const insertPosition = pendingInsertRef.current ?? undefined
-      pendingInsertRef.current = null
-
-      if (newItems.length === 1) {
-        insertImageRef.current(newItems[0].id, insertPosition)
-      } else {
-        setContent((prev) => {
-          let blocks = contentToBlocks(prev)
-          let targetIndex = insertPosition?.blockIndex ?? blocks.findIndex((b) => b.type === 'text')
-          if (targetIndex < 0) targetIndex = 0
-          let cursorPos =
-            insertPosition?.cursor ??
-            (() => {
-              const block = blocks[targetIndex]
-              return block?.type === 'text' ? block.text.length : 0
-            })()
-
-          for (const item of newItems) {
-            blocks = insertImageBlock(blocks, targetIndex, cursorPos, item.id)
-            targetIndex = blocks.findIndex((b, i) => i > targetIndex && b.type === 'text')
-            if (targetIndex < 0) targetIndex = blocks.length
-            const nextBlock = blocks[targetIndex]
-            cursorPos = nextBlock?.type === 'text' ? nextBlock.text.length : 0
-          }
-          return blocksToContent(blocks)
-        })
       }
+    })
 
-      markDirty()
-      setError(null)
-      return
+    if (type === 'image') {
+      setContent(nextContent)
     }
-
-    const next: LocalMedia[] = selected.map((file, index) => ({
-      id: crypto.randomUUID(),
-      file,
-      media_type: type,
-      public_url: URL.createObjectURL(file),
-      sort_order: media.length + index,
-      isNew: true,
-    }))
 
     setMedia((prev) => [...prev, ...next])
     markDirty()
     setError(null)
   }
 
-  const handleRemoveInlineMedia = (mediaId: string) => {
-    setMedia((prev) =>
-      prev.map((m) => (m.id === mediaId ? { ...m, markedForDelete: true } : m)),
-    )
-    markDirty()
-  }
-
   const removeMedia = (mediaId: string) => {
+    const target = media.find((item) => item.id === mediaId)
+    if (target?.media_type === 'image') {
+      setContent((current) => removeImageMarker(current, mediaId))
+    }
+
     setMedia((prev) =>
       prev.map((m) => {
         if (m.id !== mediaId) return m
@@ -242,12 +187,8 @@ export function EditorPage() {
   }
 
   const visibleMedia = media.filter((m) => !m.markedForDelete)
-  const referencedIds = collectReferencedMediaIds(content)
   const visibleVideos = visibleMedia.filter((m) => m.media_type === 'video')
-  const coverUrl =
-    visibleMedia.find((m) => m.media_type === 'image' && referencedIds.has(m.id))?.public_url ??
-    visibleMedia.find((m) => m.media_type === 'image')?.public_url ??
-    null
+  const coverUrl = visibleMedia.find((m) => m.media_type === 'image')?.public_url ?? null
 
   const handleExport = async () => {
     if (!exportRef.current) return
@@ -285,19 +226,6 @@ export function EditorPage() {
           <div className="editor-header__actions">
             <button
               type="button"
-              className="icon-btn editor-header__insert"
-              onClick={openImagePickerAtCursor}
-              disabled={imageCount >= MAX_IMAGES}
-              aria-label={`添加图片，已用 ${imageCount}/${MAX_IMAGES}`}
-            >
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <rect x="3" y="5" width="18" height="14" rx="2" stroke="currentColor" strokeWidth="1.6" />
-                <circle cx="8.5" cy="10" r="1.5" fill="currentColor" />
-                <path d="M21 16l-5-5-4 4-2-2-5 5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-            </button>
-            <button
-              type="button"
               className="btn btn--ghost btn--sm"
               onClick={handleExport}
               disabled={exporting}
@@ -324,15 +252,20 @@ export function EditorPage() {
               value={title}
               onChange={(e) => { setTitle(e.target.value); markDirty() }}
             />
-            <NoteContentEditor
+            <NoteEditor
               content={content}
-              media={visibleMedia}
-              canAddImage={imageCount < MAX_IMAGES}
-              onChange={(next) => { setContent(next); markDirty() }}
-              insertImageRef={insertImageRef}
-              onAddImageRequest={handleAddImageRequest}
-              onAddImageBlocked={() => setError(`图片最多 ${MAX_IMAGES} 张`)}
-              onRemoveMedia={handleRemoveInlineMedia}
+              media={media}
+              imageCount={imageCount}
+              onContentChange={(value) => {
+                setContent(value)
+                markDirty()
+              }}
+              onMediaAdd={(items) => {
+                setMedia((prev) => [...prev, ...items])
+                markDirty()
+              }}
+              onMediaRemove={removeMedia}
+              onError={setError}
             />
 
             {visibleVideos.length > 0 && (
@@ -353,41 +286,49 @@ export function EditorPage() {
               </div>
             )}
           </div>
+
+          <div className="editor-toolbar">
+            <input
+              ref={imageInputRef}
+              type="file"
+              accept="image/*"
+              multiple
+              hidden
+              onChange={(e) => {
+                addFiles(e.target.files, 'image')
+                e.target.value = ''
+              }}
+            />
+            <input
+              ref={videoInputRef}
+              type="file"
+              accept="video/*"
+              multiple
+              hidden
+              onChange={(e) => {
+                addFiles(e.target.files, 'video')
+                e.target.value = ''
+              }}
+            />
+            <button
+              type="button"
+              className="btn btn--ghost btn--sm"
+              onClick={() => imageInputRef.current?.click()}
+              disabled={imageCount >= MAX_IMAGES}
+            >
+              图片 ({imageCount}/{MAX_IMAGES})
+            </button>
+            <button
+              type="button"
+              className="btn btn--ghost btn--sm"
+              onClick={() => videoInputRef.current?.click()}
+              disabled={videoCount >= MAX_VIDEOS}
+            >
+              视频 ({videoCount}/{MAX_VIDEOS})
+            </button>
+          </div>
         </div>
       </main>
-
-      <div className="editor-toolbar editor-toolbar--fixed" role="toolbar" aria-label="编辑工具">
-        <input
-          ref={imageInputRef}
-          type="file"
-          accept="image/*"
-          multiple
-          hidden
-          onChange={(e) => {
-            addFiles(e.target.files, 'image')
-            e.target.value = ''
-          }}
-        />
-        <input
-          ref={videoInputRef}
-          type="file"
-          accept="video/*"
-          multiple
-          hidden
-          onChange={(e) => {
-            addFiles(e.target.files, 'video')
-            e.target.value = ''
-          }}
-        />
-        <button
-          type="button"
-          className="btn btn--ghost btn--sm editor-toolbar__btn editor-toolbar__btn--full"
-          onClick={() => videoInputRef.current?.click()}
-          disabled={videoCount >= MAX_VIDEOS}
-        >
-          添加视频 ({videoCount}/{MAX_VIDEOS})
-        </button>
-      </div>
 
       <button
         type="button"
