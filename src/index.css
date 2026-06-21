@@ -550,6 +550,82 @@ ul {
   word-break: break-word;
 }
 
+.note-content-editor {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  flex: 1;
+  min-height: 200px;
+}
+
+.note-content-editor__text {
+  flex: none;
+  min-height: 0;
+  width: 100%;
+  field-sizing: content;
+}
+
+.inline-image {
+  position: relative;
+  margin: 0;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: var(--color-primary-soft);
+}
+
+.inline-image img {
+  width: 100%;
+  display: block;
+  border-radius: var(--radius-md);
+}
+
+.inline-image--readonly {
+  margin: var(--space-sm) 0;
+}
+
+.inline-image__remove {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: var(--radius-full);
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  font-size: 1.125rem;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.note-content-renderer {
+  display: block;
+}
+
+.note-content-renderer__text {
+  white-space: pre-wrap;
+}
+
+.inline-image__placeholder {
+  width: 100%;
+  min-height: 120px;
+  background: linear-gradient(
+    90deg,
+    var(--color-primary-soft) 0%,
+    color-mix(in srgb, var(--color-primary-soft) 70%, transparent) 50%,
+    var(--color-primary-soft) 100%
+  );
+  background-size: 200% 100%;
+  animation: inline-image-shimmer 1.2s ease-in-out infinite;
+}
+
+@keyframes inline-image-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
 .editor-content {
   width: 100%;
   flex: 1;

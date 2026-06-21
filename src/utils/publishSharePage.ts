@@ -8,6 +8,7 @@ export interface SharedNoteView {
   cover_url: string | null
   updated_at: string
   note_media: Array<{
+    id?: string
     media_type: 'image' | 'video'
     public_url: string
     sort_order: number
@@ -66,6 +67,7 @@ function noteToSharedView(note: Note): SharedNoteView {
     cover_url: note.cover_url,
     updated_at: note.updated_at,
     note_media: (note.note_media ?? []).map((item) => ({
+      id: item.id,
       media_type: item.media_type,
       public_url: item.public_url,
       sort_order: item.sort_order,

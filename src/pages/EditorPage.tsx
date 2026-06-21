@@ -3,11 +3,13 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { ThemeToggle } from '../components/ThemeToggle'
 import { ShareSheet } from '../components/ShareSheet'
 import { WechatSharePanel } from '../components/WechatSharePanel'
+import { NoteContentEditor } from '../components/NoteContentEditor'
 import { useAuth } from '../contexts/AuthContext'
 import { fetchNoteById, saveNote } from '../hooks/useNotes'
 import { useTheme } from '../hooks/useTheme'
 import type { LocalMedia, NoteMedia } from '../types/note'
 import { MAX_IMAGES, MAX_VIDEOS } from '../types/note'
+import { appendMissingImageMarkers, blocksToContent, collectReferencedMediaIds, contentToBlocks, insertImageBlock } from '../utils/noteContent'
 import { exportNoteAsImage } from '../utils/exportNote'
 import type { ShareLinkPayload } from '../utils/shareNote'
 
@@ -43,6 +45,7 @@ export function EditorPage() {
   const exportRef = useRef<HTMLDivElement>(null)
   const imageInputRef = useRef<HTMLInputElement>(null)
   const videoInputRef = useRef<HTMLInputElement>(null)
+  const insertImageRef = useRef<(mediaId: string) => void>(() => {})
 
   useEffect(() => {
     if (!id) return
@@ -54,8 +57,16 @@ export function EditorPage() {
         return
       }
       setTitle(note.title)
-      setContent(note.content)
-      setMedia(mapRemoteMedia(note.note_media))
+      const mappedMedia = mapRemoteMedia(note.note_media)
+      const legacyImageIds = mappedMedia
+        .filter((m) => m.media_type === 'image')
+        .map((m) => m.id)
+      const normalizedContent = appendMissingImageMarkers(note.content, legacyImageIds)
+      setContent(normalizedContent)
+      setMedia(mappedMedia)
+      if (normalizedContent !== note.content) {
+        dirtyRef.current = true
+      }
       setLoading(false)
     })
   }, [id])
@@ -130,6 +141,40 @@ export function EditorPage() {
     }
 
     const selected = Array.from(files).slice(0, remaining)
+
+    if (type === 'image') {
+      const newItems: LocalMedia[] = selected.map((file, index) => ({
+        id: crypto.randomUUID(),
+        file,
+        media_type: 'image' as const,
+        public_url: URL.createObjectURL(file),
+        sort_order: media.length + index,
+        isNew: true,
+      }))
+
+      setMedia((prev) => [...prev, ...newItems])
+
+      if (newItems.length === 1) {
+        insertImageRef.current(newItems[0].id)
+      } else {
+        setContent((prev) => {
+          let blocks = contentToBlocks(prev)
+          for (const item of newItems) {
+            const textIndex = blocks.findIndex((b) => b.type === 'text')
+            const targetIndex = textIndex >= 0 ? textIndex : 0
+            const cursorPos =
+              blocks[targetIndex]?.type === 'text' ? blocks[targetIndex].text.length : 0
+            blocks = insertImageBlock(blocks, targetIndex, cursorPos, item.id)
+          }
+          return blocksToContent(blocks)
+        })
+      }
+
+      markDirty()
+      setError(null)
+      return
+    }
+
     const next: LocalMedia[] = selected.map((file, index) => ({
       id: crypto.randomUUID(),
       file,
@@ -144,6 +189,13 @@ export function EditorPage() {
     setError(null)
   }
 
+  const handleRemoveInlineMedia = (mediaId: string) => {
+    setMedia((prev) =>
+      prev.map((m) => (m.id === mediaId ? { ...m, markedForDelete: true } : m)),
+    )
+    markDirty()
+  }
+
   const removeMedia = (mediaId: string) => {
     setMedia((prev) =>
       prev.map((m) => {
@@ -156,7 +208,12 @@ export function EditorPage() {
   }
 
   const visibleMedia = media.filter((m) => !m.markedForDelete)
-  const coverUrl = visibleMedia.find((m) => m.media_type === 'image')?.public_url ?? null
+  const referencedIds = collectReferencedMediaIds(content)
+  const visibleVideos = visibleMedia.filter((m) => m.media_type === 'video')
+  const coverUrl =
+    visibleMedia.find((m) => m.media_type === 'image' && referencedIds.has(m.id))?.public_url ??
+    visibleMedia.find((m) => m.media_type === 'image')?.public_url ??
+    null
 
   const handleExport = async () => {
     if (!exportRef.current) return
@@ -220,22 +277,19 @@ export function EditorPage() {
               value={title}
               onChange={(e) => { setTitle(e.target.value); markDirty() }}
             />
-            <textarea
-              className="editor-content note-body-text"
-              placeholder="开始书写…"
-              value={content}
-              onChange={(e) => { setContent(e.target.value); markDirty() }}
+            <NoteContentEditor
+              content={content}
+              media={visibleMedia}
+              onChange={(next) => { setContent(next); markDirty() }}
+              insertImageRef={insertImageRef}
+              onRemoveMedia={handleRemoveInlineMedia}
             />
 
-            {visibleMedia.length > 0 && (
+            {visibleVideos.length > 0 && (
               <div className="media-grid">
-                {visibleMedia.map((item) => (
+                {visibleVideos.map((item) => (
                   <div key={item.id} className="media-item">
-                    {item.media_type === 'image' ? (
-                      <img src={item.public_url} alt="" />
-                    ) : (
-                      <video src={item.public_url} controls preload="metadata" />
-                    )}
+                    <video src={item.public_url} controls preload="metadata" />
                     <button
                       type="button"
                       className="media-item__remove"
@@ -279,7 +333,7 @@ export function EditorPage() {
               onClick={() => imageInputRef.current?.click()}
               disabled={imageCount >= MAX_IMAGES}
             >
-              图片 ({imageCount}/{MAX_IMAGES})
+              插入图片 ({imageCount}/{MAX_IMAGES})
             </button>
             <button
               type="button"

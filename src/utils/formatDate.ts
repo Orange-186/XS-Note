@@ -21,8 +21,10 @@ export function formatRelativeTime(dateStr: string): string {
   })
 }
 
+import { stripImageMarkers } from './noteContent'
+
 export function getContentSummary(content: string, maxLength = 80): string {
-  const trimmed = content.replace(/\s+/g, ' ').trim()
+  const trimmed = stripImageMarkers(content)
   if (!trimmed) return '暂无内容'
   return trimmed.length > maxLength ? `${trimmed.slice(0, maxLength)}…` : trimmed
 }
